@@ -1,0 +1,225 @@
+import signal
+import cv2
+import tarfile
+import os
+import datetime
+import numpy as np
+from multiprocessing import Pool
+
+# static globals
+__EXPECTED_FRAME_COUNT = 20
+__PNG_METADATA_PROJECT_UID = "nascam"
+
+# dynamic globals
+__worker_tar_tempdir = ""
+
+
+def read(file_list, workers=1, tar_tempdir="."):
+    """
+    Read in a single PNG.TAR file, or an array of them. All files
+    must be the same type.
+
+    :param file_list: filename or list of filenames
+    :type file_list: str
+    :param workers: number of worker processes to spawn, defaults to 1
+    :type workers: int, optional
+    :param tar_tempdir: path to untar to, defaults to '.'
+    :type tar_tempdir: str, optional
+
+    :return: images, metadata dictionaries, and problematic files
+    :rtype: numpy.ndarray, list[dict], list[dict]
+    """
+    # set globals
+    global __worker_tar_tempdir
+    __worker_tar_tempdir = tar_tempdir
+
+    # set up process pool (ignore SIGINT before spawning pool so child processes inherit SIGINT handler)
+    original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    pool = Pool(processes=workers)
+    signal.signal(signal.SIGINT, original_sigint_handler)  # restore SIGINT handler
+
+    # if input is just a single file name in a string, convert to a list to be fed to the workers
+    if isinstance(file_list, str):
+        file_list = [file_list]
+
+    # call readfile function, run each iteration with a single input file from file_list
+    pool_data = []
+    try:
+        pool_data = pool.map(__nascam_readfile_worker, file_list)
+    except KeyboardInterrupt:
+        pool.terminate()  # gracefully kill children
+        return np.empty((0, 0)), [], []
+    else:
+        pool.close()
+
+    # set sizes
+    image_width = pool_data[0][5]
+    image_height = pool_data[0][6]
+    image_dtype = pool_data[0][7]
+
+    # pre-allocate array sizes (optimization)
+    predicted_num_frames = len(file_list) * __EXPECTED_FRAME_COUNT
+    images = np.empty([image_width, image_height, predicted_num_frames], dtype=image_dtype)
+    metadata_dict_list = [{}] * predicted_num_frames
+    problematic_file_list = []
+
+    # reorganize data
+    list_position = 0
+    for i in range(0, len(pool_data)):
+        # check if file was problematic
+        if (pool_data[i][2] is True):
+            problematic_file_list.append({
+                "filename": pool_data[i][3],
+                "error_message": pool_data[i][4],
+            })
+
+        # check if any data was read in
+        if (len(pool_data[i][1]) == 0):
+            continue
+
+        # find actual number of frames, this may differ from predicted due to dropped frames, end
+        # or start of imaging
+        real_num_frames = pool_data[i][0].shape[-1]
+
+        # metadata dictionary list at data[][1]
+        metadata_dict_list[list_position:list_position + real_num_frames] = pool_data[i][1]
+        images[:, :, list_position:list_position + real_num_frames] = pool_data[i][0]
+        list_position = list_position + real_num_frames  # advance list position
+
+    # trim unused elements from predicted array sizes
+    metadata_dict_list = metadata_dict_list[0:list_position]
+    images = np.delete(images, range(list_position, predicted_num_frames), axis=2)
+
+    # ensure entire array views as the dtype
+    images = images.astype(image_dtype)
+
+    # return
+    pool_data = None
+    return images, metadata_dict_list, problematic_file_list
+
+
+def __nascam_readfile_worker(file):
+    # init
+    images = np.array([])
+    metadata_dict_list = []
+    problematic = False
+    error_message = ""
+    image_width = 0
+    image_height = 0
+    image_dtype = np.dtype("uint16")
+    image_dtype = image_dtype.newbyteorder('>')
+
+    # check file extension to know how to process
+    try:
+        if (file.endswith("png") or file.endswith("png.tar")):
+            return __nascam_readfile_worker_png(file)
+        else:
+            print("Unrecognized file type: %s" % (file))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print("Failed to process file '%s' " % (file))
+        problematic = True
+        error_message = "failed to process file: %s" % (str(e))
+    return images, metadata_dict_list, problematic, file, error_message, \
+        image_width, image_height, image_dtype
+
+
+def __nascam_readfile_worker_png(file):
+    # init
+    images = np.array([])
+    metadata_dict_list = []
+    problematic = False
+    first_frame = True
+    error_message = ""
+    image_width = 0
+    image_height = 0
+    image_dtype = np.uint16
+    is_tar_file = False
+
+    # check if it's a tar file
+    file_list = []
+    if (file.endswith(".png.tar")):
+        # tar file, extract all frames and add to list
+        try:
+            tf = tarfile.open(file)
+            file_list = sorted(tf.getnames())
+            tf.extractall(path=__worker_tar_tempdir)
+            for i in range(0, len(file_list)):
+                file_list[i] = "%s/%s" % (__worker_tar_tempdir, file_list[i])
+            tf.close()
+            is_tar_file = True
+        except Exception as e:
+            if ("file_list" in locals()):
+                # cleanup
+                for f in file_list:
+                    try:
+                        os.remove(f)
+                    except Exception:
+                        pass
+            print("Failed to open file '%s' " % (file))
+            problematic = True
+            error_message = "failed to open file: %s" % (str(e))
+            return images, metadata_dict_list, problematic, file, error_message, \
+                image_width, image_height, image_dtype
+    else:
+        # regular png
+        file_list = [file]
+
+    # read each png file
+    for f in file_list:
+        # process metadata
+        try:
+            # set metadata values
+            file_split = os.path.basename(f).split('_')
+            site_uid = file_split[2]
+            device_uid = file_split[3]
+            mode_uid = file_split[4]
+            exposure = "%.03f ms" % (float(file_split[5][:-6]))
+            timestamp = datetime.datetime.strptime("%sT%s" % (file_split[0], file_split[1]), "%Y%m%dT%H%M%S")
+
+            # set the metadata dict
+            metadata_dict = {
+                "Project unique ID": __PNG_METADATA_PROJECT_UID,
+                "Site unique ID": site_uid,
+                "Imager unique ID": device_uid,
+                "Mode unique ID": mode_uid,
+                "Image request start": timestamp,
+                "Subframe requested exposure": exposure,
+            }
+            metadata_dict_list.append(metadata_dict)
+        except Exception as e:
+            print("Failed to read metadata from file '%s' " % (f))
+            problematic = True
+            error_message = "failed to read metadata: %s" % (str(e))
+            break
+
+        # read png file
+        try:
+            # read file
+            image_np = cv2.imread(f, cv2.IMREAD_GRAYSCALE)
+            image_width = image_np.shape[0]
+            image_height = image_np.shape[1]
+            image_matrix = np.reshape(image_np, (image_width, image_height, 1))
+
+            # initialize image stack
+            if (first_frame is True):
+                images = image_matrix
+                first_frame = False
+            else:
+                images = np.dstack([images, image_matrix])  # depth stack images (on last axis)
+        except Exception as e:
+            print("Failed reading image data frame: %s" % (str(e)))
+            metadata_dict_list.pop()  # remove corresponding metadata entry
+            problematic = True
+            error_message = "image data read failure: %s" % (str(e))
+            continue  # skip to next frame
+
+    # remove untarred files
+    if (is_tar_file is True):
+        for f in file_list:
+            os.remove(f)
+
+    # return
+    return images, metadata_dict_list, problematic, file, error_message, \
+        image_width, image_height, image_dtype
