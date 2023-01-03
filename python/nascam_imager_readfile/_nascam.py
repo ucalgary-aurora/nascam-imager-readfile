@@ -197,7 +197,7 @@ def __nascam_readfile_worker_png(file):
         # read png file
         try:
             # read file
-            image_np = cv2.imread(f, cv2.IMREAD_GRAYSCALE)
+            image_np = cv2.imread(f, cv2.IMREAD_UNCHANGED)
             image_width = image_np.shape[0]
             image_height = image_np.shape[1]
             image_matrix = np.reshape(image_np, (image_width, image_height, 1))
