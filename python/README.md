@@ -21,7 +21,7 @@ $ python3 -m pip install nascam-imager-readfile
 
 ## Supported Python Versions
 
-nascam-imager-readfile officially supports Python 3.6+.
+nascam-imager-readfile officially supports Python 3.8+.
 
 ## Examples
 
