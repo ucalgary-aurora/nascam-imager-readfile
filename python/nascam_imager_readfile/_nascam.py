@@ -4,6 +4,7 @@ import tarfile
 import os
 import datetime
 import numpy as np
+from pathlib import Path
 from multiprocessing import Pool
 
 # static globals
@@ -25,7 +26,7 @@ def __nascam_readfile_worker(file_obj):
     # check file extension to know how to process
     try:
         if (file_obj["filename"].endswith("png") or file_obj["filename"].endswith("png.tar")):
-            return __nascam_readfile_worker_png(file_obj["filename"])
+            return __nascam_readfile_worker_png(file_obj)
         else:
             print("Unrecognized file type: %s" % (file_obj["filename"]))
     except Exception as e:
@@ -138,7 +139,7 @@ def __nascam_readfile_worker_png(file_obj):
         image_width, image_height, image_dtype
 
 
-def read(file_list, workers=1, tar_tempdir=os.getcwd()):
+def read(file_list, workers=1, tar_tempdir=None):
     """
     Read in a single PNG.TAR file, or an array of them. All files
     must be the same type.
@@ -147,16 +148,17 @@ def read(file_list, workers=1, tar_tempdir=os.getcwd()):
     :type file_list: str
     :param workers: number of worker processes to spawn, defaults to 1
     :type workers: int, optional
-    :param tar_tempdir: path to untar to, defaults to '.'
+    :param tar_tempdir: path to untar to, defaults to '~/.nascam_imager_readfile'
     :type tar_tempdir: str, optional
 
     :return: images, metadata dictionaries, and problematic files
     :rtype: numpy.ndarray, list[dict], list[dict]
     """
-    # set up process pool (ignore SIGINT before spawning pool so child processes inherit SIGINT handler)
-    original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
-    pool = Pool(processes=workers)
-    signal.signal(signal.SIGINT, original_sigint_handler)  # restore SIGINT handler
+    # set tar path
+    if (tar_tempdir is None):
+        tar_tempdir = Path("%s/.nascam_imager_readfile" % (str(Path.home())))
+    if not (os.path.exists(tar_tempdir)):
+        os.makedirs(tar_tempdir)
 
     # if input is just a single file name in a string, convert to a list to be fed to the workers
     if isinstance(file_list, str):
@@ -170,15 +172,33 @@ def read(file_list, workers=1, tar_tempdir=os.getcwd()):
             "tar_tempdir": tar_tempdir,
         })
 
-    # call readfile function, run each iteration with a single input file from file_list
-    pool_data = []
-    try:
-        pool_data = pool.map(__nascam_readfile_worker, processing_list)
-    except KeyboardInterrupt:
-        pool.terminate()  # gracefully kill children
-        return np.empty((0, 0)), [], []
+    # check workers
+    if (workers > 1):
+        try:
+            # set up process pool (ignore SIGINT before spawning pool so child processes inherit SIGINT handler)
+            original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+            pool = Pool(processes=workers)
+            signal.signal(signal.SIGINT, original_sigint_handler)  # restore SIGINT handler
+        except ValueError:
+            # likely the read call is being used within a context that doesn't support the usage
+            # of signals in this way, proceed without it
+            pool = Pool(processes=workers)
+
+        # call readfile function, run each iteration with a single input file from file_list
+        # NOTE: structure of data - data[file][metadata dictionary lists = 1, images = 0][frame]
+        pool_data = []
+        try:
+            pool_data = pool.map(__nascam_readfile_worker, processing_list)
+        except KeyboardInterrupt:
+            pool.terminate()  # gracefully kill children
+            return np.empty((0, 0, 0)), [], []
+        else:
+            pool.close()
     else:
-        pool.close()
+        # don't bother using multiprocessing with one worker, just call the worker function directly
+        pool_data = []
+        for p in processing_list:
+            pool_data.append(__nascam_readfile_worker(p))
 
     # set sizes
     image_width = pool_data[0][5]
