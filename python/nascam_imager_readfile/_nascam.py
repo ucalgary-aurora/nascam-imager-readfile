@@ -28,11 +28,11 @@ def __nascam_readfile_worker(file_obj):
         if (file_obj["filename"].endswith("png") or file_obj["filename"].endswith("png.tar")):
             return __nascam_readfile_worker_png(file_obj)
         else:
-            print("Unrecognized file type: %s" % (file_obj["filename"]))
+            if (file_obj["quiet"] is False):
+                print("Unrecognized file type: %s" % (file_obj["filename"]))
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print("Failed to process file '%s' " % (file_obj["filename"]))
+        if (file_obj["quiet"] is False):
+            print("Failed to process file '%s' " % (file_obj["filename"]))
         problematic = True
         error_message = "failed to process file: %s" % (str(e))
     return images, metadata_dict_list, problematic, file_obj["filename"], error_message, \
@@ -71,7 +71,8 @@ def __nascam_readfile_worker_png(file_obj):
                         os.remove(f)
                     except Exception:
                         pass
-            print("Failed to open file '%s' " % (file_obj["filename"]))
+            if (file_obj["quiet"] is False):
+                print("Failed to open file '%s' " % (file_obj["filename"]))
             problematic = True
             error_message = "failed to open file: %s" % (str(e))
             return images, metadata_dict_list, problematic, file_obj["filename"], error_message, \
@@ -103,7 +104,8 @@ def __nascam_readfile_worker_png(file_obj):
             }
             metadata_dict_list.append(metadata_dict)
         except Exception as e:
-            print("Failed to read metadata from file '%s' " % (f))
+            if (file_obj["quiet"] is False):
+                print("Failed to read metadata from file '%s' " % (f))
             problematic = True
             error_message = "failed to read metadata: %s" % (str(e))
             break
@@ -123,7 +125,8 @@ def __nascam_readfile_worker_png(file_obj):
             else:
                 images = np.dstack([images, image_matrix])  # depth stack images (on last axis)
         except Exception as e:
-            print("Failed reading image data frame: %s" % (str(e)))
+            if (file_obj["quiet"] is False):
+                print("Failed reading image data frame: %s" % (str(e)))
             metadata_dict_list.pop()  # remove corresponding metadata entry
             problematic = True
             error_message = "image data read failure: %s" % (str(e))
@@ -139,7 +142,7 @@ def __nascam_readfile_worker_png(file_obj):
         image_width, image_height, image_dtype
 
 
-def read(file_list, workers=1, tar_tempdir=None):
+def read(file_list, workers=1, tar_tempdir=None, quiet=False):
     """
     Read in a single PNG.TAR file, or an array of them. All files
     must be the same type.
@@ -150,6 +153,8 @@ def read(file_list, workers=1, tar_tempdir=None):
     :type workers: int, optional
     :param tar_tempdir: path to untar to, defaults to '~/.nascam_imager_readfile'
     :type tar_tempdir: str, optional
+    :param quiet: reduce output while reading data
+    :type quiet: bool, optional
 
     :return: images, metadata dictionaries, and problematic files
     :rtype: numpy.ndarray, list[dict], list[dict]
@@ -170,6 +175,7 @@ def read(file_list, workers=1, tar_tempdir=None):
         processing_list.append({
             "filename": f,
             "tar_tempdir": tar_tempdir,
+            "quiet": quiet,
         })
 
     # check workers
