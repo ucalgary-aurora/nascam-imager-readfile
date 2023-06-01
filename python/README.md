@@ -57,6 +57,14 @@ Import the library using `import nascam_imager_readfile`
 >>> img, meta, problematic_files = nascam_imager_readfile.read(file_list, workers=4)
 ```
 
+### Read with no output
+
+```python
+>>> import nascam_imager_readfile, glob
+>>> file_list = glob.glob("path/to/files/2010/01/01/atha_nascam-iccd04/ut06/*.tar")
+>>> img, meta, problematic_files = nascam_imager_readfile.read(file_list, workers=4, quiet=True)
+```
+
 ## Development
 
 Clone the repository and install dependencies using Poetry.
