@@ -21,7 +21,6 @@ pytest = "^8.0.0"
 pycodestyle = "^2.11.1"
 ruff = "^0.2.0"
 yapf = "^0.40.2"
-psutil = "^5.0.0"
 pytest-xdist = "^3.5.0"
 pytest-sugar = "^1.0.0"
 
