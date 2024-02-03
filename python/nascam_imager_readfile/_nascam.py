@@ -3,6 +3,9 @@ import cv2
 import tarfile
 import os
 import datetime
+import string
+import random
+import shutil
 import numpy as np
 from pathlib import Path
 from multiprocessing import Pool
@@ -49,7 +52,10 @@ def __nascam_readfile_worker_png(file_obj):
     image_width = 0
     image_height = 0
     image_dtype = np.uint16
-    is_tar_file = False
+    working_dir_created = False
+
+    # set up working dir
+    this_working_dir = "%s/%s" % (file_obj["tar_tempdir"], ''.join(random.choices(string.ascii_lowercase, k=8)))
 
     # check if it's a tar file
     file_list = []
@@ -58,19 +64,19 @@ def __nascam_readfile_worker_png(file_obj):
         try:
             tf = tarfile.open(file_obj["filename"])
             file_list = sorted(tf.getnames())
-            tf.extractall(path=file_obj["tar_tempdir"])
+            tf.extractall(path=this_working_dir)
             for i in range(0, len(file_list)):
-                file_list[i] = "%s/%s" % (file_obj["tar_tempdir"], file_list[i])
+                file_list[i] = "%s/%s" % (this_working_dir, file_list[i])
             tf.close()
-            is_tar_file = True
+            working_dir_created = True
         except Exception as e:
-            if ("file_list" in locals()):
-                # cleanup
-                for f in file_list:
-                    try:
-                        os.remove(f)
-                    except Exception:
-                        pass
+            # cleanup
+            try:
+                shutil.rmtree(this_working_dir)
+            except Exception:
+                pass
+
+            # set error message
             if (file_obj["quiet"] is False):
                 print("Failed to open file '%s' " % (file_obj["filename"]))
             problematic = True
@@ -132,10 +138,11 @@ def __nascam_readfile_worker_png(file_obj):
             error_message = "image data read failure: %s" % (str(e))
             continue  # skip to next frame
 
-    # remove untarred files
-    if (is_tar_file is True):
-        for f in file_list:
-            os.remove(f)
+    # cleanup
+    #
+    # NOTE: we only clean up the working dir if we created it
+    if (working_dir_created is True):
+        shutil.rmtree(this_working_dir)
 
     # return
     return images, metadata_dict_list, problematic, file_obj["filename"], error_message, \
