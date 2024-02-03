@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nascam-imager-readfile"
-version = "1.4.0"
+version = "1.4.1"
 description = "Read functions for NASCAM ASI raw files"
 readme = "README.md"
 homepage = "https://github.com/ucalgary-aurora/nascam-imager-readfile"
@@ -14,7 +14,7 @@ packages = [
 [tool.poetry.dependencies]
 python = "^3.8.1"
 numpy = "^1.21.0"
-opencv-python = "^4.0.0"
+opencv-python = "^4.4.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
