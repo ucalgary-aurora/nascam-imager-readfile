@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nascam-imager-readfile"
-version = "1.4.1"
+version = "1.4.2"
 description = "Read functions for NASCAM ASI raw files"
 readme = "README.md"
 homepage = "https://github.com/ucalgary-aurora/nascam-imager-readfile"

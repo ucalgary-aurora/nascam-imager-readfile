@@ -169,8 +169,7 @@ def read(file_list, workers=1, tar_tempdir=None, quiet=False):
     # set tar path
     if (tar_tempdir is None):
         tar_tempdir = Path("%s/.nascam_imager_readfile" % (str(Path.home())))
-    if not (os.path.exists(tar_tempdir)):
-        os.makedirs(tar_tempdir, exist_ok=True)
+    os.makedirs(tar_tempdir, exist_ok=True)
 
     # if input is just a single file name in a string, convert to a list to be fed to the workers
     if isinstance(file_list, str):
