@@ -47,7 +47,7 @@ def __nascam_readfile_worker_png(file_obj):
     images = np.array([])
     metadata_dict_list = []
     problematic = False
-    first_frame = True
+    is_first = True
     error_message = ""
     image_width = 0
     image_height = 0
@@ -81,6 +81,10 @@ def __nascam_readfile_worker_png(file_obj):
                 print("Failed to open file '%s' " % (file_obj["filename"]))
             problematic = True
             error_message = "failed to open file: %s" % (str(e))
+            try:
+                tf.close()
+            except Exception:
+                pass
             return images, metadata_dict_list, problematic, file_obj["filename"], error_message, \
                 image_width, image_height, image_dtype
     else:
@@ -125,9 +129,9 @@ def __nascam_readfile_worker_png(file_obj):
             image_matrix = np.reshape(image_np, (image_width, image_height, 1))
 
             # initialize image stack
-            if (first_frame is True):
+            if (is_first is True):
                 images = image_matrix
-                first_frame = False
+                is_first = False
             else:
                 images = np.dstack([images, image_matrix])  # depth stack images (on last axis)
         except Exception as e:
